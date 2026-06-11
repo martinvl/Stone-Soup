@@ -17,6 +17,14 @@ class Detection(State):
         default_factory=dict, doc='Dictionary of metadata items for Detections.')
 
 
+class DetectionSet(set):
+    """Set of detections with optional detector context."""
+
+    def __init__(self, detections=(), detector_context=None):
+        super().__init__(detections)
+        self.detector_context = detector_context
+
+
 class GaussianDetection(Detection, GaussianState):
     """GaussianDetection type"""
 

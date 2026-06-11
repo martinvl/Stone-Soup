@@ -54,18 +54,22 @@ class SingleTargetTracker(_TrackerMixInNext, Tracker):
 
     def __next__(self) -> tuple[datetime.datetime, set[Track]]:
         time, detections = next(self.detector_iter)
+        detector_context = getattr(detections, 'detector_context', None)
         if self._track is not None:
             associations = self.data_associator.associate(
-                self.tracks, detections, time)
+                self.tracks, detections, time, detector_context=detector_context)
             if associations[self._track]:
-                state_post = self.updater.update(associations[self._track])
+                state_post = self.updater.update(
+                    associations[self._track], detector_context=detector_context)
                 self._track.append(state_post)
             else:
                 self._track.append(
                     associations[self._track].prediction)
 
-        if self._track is None or self.deleter.delete_tracks(self.tracks):
-            new_tracks = self.initiator.initiate(detections, time)
+        if self._track is None or self.deleter.delete_tracks(
+                self.tracks, detector_context=detector_context):
+            new_tracks = self.initiator.initiate(
+                detections, time, detector_context=detector_context)
             if new_tracks:
                 self._track = new_tracks.pop()
             else:
@@ -108,10 +112,11 @@ class SingleTargetMixtureTracker(_TrackerMixInNext, Tracker):
 
     def __next__(self) -> tuple[datetime.datetime, set[Track]]:
         time, detections = next(self.detector_iter)
+        detector_context = getattr(detections, 'detector_context', None)
 
         if self._track is not None:
             associations = self.data_associator.associate(
-                self.tracks, detections, time)
+                self.tracks, detections, time, detector_context=detector_context)
 
             unassociated_detections = set(detections)
             for track, multihypothesis in associations.items():
@@ -126,7 +131,8 @@ class SingleTargetMixtureTracker(_TrackerMixInNext, Tracker):
                         posterior_states.append(hypothesis.prediction)
                     else:
                         posterior_states.append(
-                            self.updater.update(hypothesis))
+                            self.updater.update(
+                                hypothesis, detector_context=detector_context))
                     posterior_state_weights.append(
                         hypothesis.probability)
 
@@ -162,8 +168,10 @@ class SingleTargetMixtureTracker(_TrackerMixInNext, Tracker):
                         if hyp.measurement in unassociated_detections:
                             unassociated_detections.remove(hyp.measurement)
 
-        if self._track is None or self.deleter.delete_tracks(self.tracks):
-            new_tracks = self.initiator.initiate(detections, time)
+        if self._track is None or self.deleter.delete_tracks(
+                self.tracks, detector_context=detector_context):
+            new_tracks = self.initiator.initiate(
+                detections, time, detector_context=detector_context)
             if new_tracks:
                 self._track = new_tracks.pop()
             else:
@@ -203,21 +211,24 @@ class MultiTargetTracker(_TrackerMixInNext, Tracker):
 
     def __next__(self) -> tuple[datetime.datetime, set[Track]]:
         time, detections = next(self.detector_iter)
+        detector_context = getattr(detections, 'detector_context', None)
 
         associations = self.data_associator.associate(
-            self.tracks, detections, time)
+            self.tracks, detections, time, detector_context=detector_context)
         associated_detections = set()
         for track, hypothesis in associations.items():
             if hypothesis:
-                state_post = self.updater.update(hypothesis)
+                state_post = self.updater.update(
+                    hypothesis, detector_context=detector_context)
                 track.append(state_post)
                 associated_detections.add(hypothesis.measurement)
             else:
                 track.append(hypothesis.prediction)
 
-        self._tracks -= self.deleter.delete_tracks(self.tracks)
+        self._tracks -= self.deleter.delete_tracks(
+            self.tracks, detector_context=detector_context)
         self._tracks |= self.initiator.initiate(
-            detections - associated_detections, time)
+            detections - associated_detections, time, detector_context=detector_context)
 
         return time, self.tracks
 
@@ -255,9 +266,10 @@ class MultiTargetMixtureTracker(_TrackerMixInNext, Tracker):
 
     def __next__(self) -> tuple[datetime.datetime, set[Track]]:
         time, detections = next(self.detector_iter)
+        detector_context = getattr(detections, 'detector_context', None)
 
         associations = self.data_associator.associate(
-            self.tracks, detections, time)
+            self.tracks, detections, time, detector_context=detector_context)
         unassociated_detections = set(detections)
         for track, multihypothesis in associations.items():
 
@@ -271,7 +283,7 @@ class MultiTargetMixtureTracker(_TrackerMixInNext, Tracker):
                     posterior_states.append(hypothesis.prediction)
                 else:
                     posterior_states.append(
-                        self.updater.update(hypothesis))
+                        self.updater.update(hypothesis, detector_context=detector_context))
                 posterior_state_weights.append(
                     hypothesis.probability)
 
@@ -306,8 +318,9 @@ class MultiTargetMixtureTracker(_TrackerMixInNext, Tracker):
                     if hyp.measurement in unassociated_detections:
                         unassociated_detections.remove(hyp.measurement)
 
-        self._tracks -= self.deleter.delete_tracks(self.tracks)
+        self._tracks -= self.deleter.delete_tracks(
+            self.tracks, detector_context=detector_context)
         self._tracks |= self.initiator.initiate(
-            unassociated_detections, time)
+            unassociated_detections, time, detector_context=detector_context)
 
         return time, self.tracks

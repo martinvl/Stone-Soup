@@ -5,6 +5,7 @@ import pytest
 
 from ..probability import PDAHypothesiser
 from ...types.detection import Detection, MissedDetection
+from ...types.detector_context import SimpleDetectorContext
 from ...types.numeric import Probability
 from ...types.state import GaussianState
 from ...types.track import Track
@@ -92,6 +93,35 @@ def test_pda(predictor, updater, normalise):
         assert float(sum(hypothesis.weight for hypothesis in mulltihypothesis)) == pytest.approx(1)
     else:
         assert float(sum(hypothesis.weight for hypothesis in mulltihypothesis)) != pytest.approx(1)
+
+
+def test_pda_detector_context(predictor, updater):
+    timestamp = datetime.datetime.now()
+    track = Track([GaussianState(np.array([[0]]), np.array([[1]]), timestamp)])
+    detection1 = Detection(np.array([[2]]))
+    detection2 = Detection(np.array([[8]]))
+    detections = {detection1, detection2}
+    detector_context = SimpleDetectorContext(
+        prob_detection=0.9,
+        clutter_spatial_density=1.2e-2)
+
+    scalar_hypothesiser = PDAHypothesiser(
+        predictor, updater, clutter_spatial_density=1.2e-2,
+        prob_detect=0.9, prob_gate=0.99, normalise=False)
+    context_hypothesiser = PDAHypothesiser(
+        predictor, updater, prob_gate=0.99, normalise=False)
+
+    scalar_hypotheses = scalar_hypothesiser.hypothesise(track, detections, timestamp)
+    context_hypotheses = context_hypothesiser.hypothesise(
+        track, detections, timestamp, detector_context=detector_context)
+
+    scalar_probabilities = {
+        None if isinstance(hypothesis.measurement, MissedDetection) else hypothesis.measurement:
+        hypothesis.probability for hypothesis in scalar_hypotheses}
+    context_probabilities = {
+        None if isinstance(hypothesis.measurement, MissedDetection) else hypothesis.measurement:
+        hypothesis.probability for hypothesis in context_hypotheses}
+    assert scalar_probabilities == context_probabilities
 
 
 def test_invalid_pda_arguments(predictor, updater):

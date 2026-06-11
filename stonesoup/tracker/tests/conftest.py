@@ -23,7 +23,7 @@ from ...types.update import GaussianStateUpdate, ParticleStateUpdate
 @pytest.fixture()
 def initiator():
     class TestInitiator:
-        def initiate(self, detections, timestamp):
+        def initiate(self, detections, timestamp, **kwargs):
             return {Track([detection])
                     for detection in detections}
     return TestInitiator()
@@ -32,7 +32,7 @@ def initiator():
 @pytest.fixture()
 def particle_initiator(initiator):
     class TestParticleInitiator:
-        def initiate(self, detections, timestamp):
+        def initiate(self, detections, timestamp, **kwargs):
             tracks = set()
             for detection in detections:
                 samples = multivariate_normal.rvs(detection.state_vector.ravel(),
@@ -49,7 +49,7 @@ def particle_initiator(initiator):
 @pytest.fixture()
 def deleter():
     class TestDeleter:
-        def delete_tracks(self, tracks):
+        def delete_tracks(self, tracks, **kwargs):
             return {track
                     for track in tracks
                     if len(track.states) > 10}
@@ -77,7 +77,7 @@ def detector():
 @pytest.fixture()
 def data_associator():
     class TestDataAssociator:
-        def associate(self, tracks, detections, timestamp):
+        def associate(self, tracks, detections, timestamp, **kwargs):
             associations = {}
             for track in tracks:
                 prediction = GaussianStatePrediction(track.state_vector + 1,
@@ -101,7 +101,7 @@ def data_associator():
 @pytest.fixture()
 def data_mixture_associator():
     class TestDataMixtureAssociator:
-        def associate(self, tracks, detections, timestamp):
+        def associate(self, tracks, detections, timestamp, **kwargs):
             associations = {}
             for track in tracks:
                 prediction = GaussianStatePrediction(track.state_vector + 1,
@@ -141,7 +141,7 @@ def data_mixture_associator():
 @pytest.fixture()
 def data_particle_associator():
     class TestDataParticleAssociator:
-        def associate(self, tracks, detections, timestamp):
+        def associate(self, tracks, detections, timestamp, **kwargs):
             associations = {}
             for track in tracks:
                 prediction = ParticleStatePrediction(track.state_vector + 1,
@@ -182,7 +182,7 @@ def data_particle_associator():
 @pytest.fixture()
 def updater():
     class TestUpdater:
-        def update(self, hypothesis):
+        def update(self, hypothesis, **kwargs):
             return GaussianStateUpdate(hypothesis.measurement.state_vector,
                                        hypothesis.prediction.covar,
                                        hypothesis,
@@ -203,7 +203,7 @@ def particle_updater():
     class TestParticleUpdater:
         resampler = None
 
-        def update(self, hypothesis):
+        def update(self, hypothesis, **kwargs):
             return ParticleStateUpdate(hypothesis.measurement.state_vector,
                                        weight=hypothesis.prediction.weight,
                                        hypothesis=hypothesis,

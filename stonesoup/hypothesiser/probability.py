@@ -10,6 +10,7 @@ from ..base import Property
 from ..functions import batch_multivariate_normal_logpdf
 from ..measures import SquaredMahalanobis
 from ..types.detection import MissedDetection
+from ..types.detector_context import SimpleDetectorContext
 from ..types.hypothesis import SingleProbabilityHypothesis
 from ..types.multihypothesis import MultipleHypothesis
 from ..types.numeric import Probability
@@ -53,7 +54,7 @@ class PDAHypothesiser(Hypothesiser):
         if self.include_all and self.clutter_spatial_density is None:
             raise ValueError("Must provide clutter spatial density if including all hypotheses")
 
-    def hypothesise(self, track, detections, timestamp, **kwargs):
+    def hypothesise(self, track, detections, timestamp, detector_context=None, **kwargs):
         r"""Evaluate and return all track association hypotheses.
 
         For a given track and a set of N detections, return a
@@ -129,17 +130,21 @@ class PDAHypothesiser(Hypothesiser):
         hypotheses = list()
         validated_measurements = 0
         measure = SquaredMahalanobis(state_covar_inv_cache_size=None)
+        detector_context = self._detector_context(detector_context)
+        use_validation_region = detector_context is None
 
         # Common state & measurement prediction
         prediction = self.predictor.predict(track, timestamp=timestamp, **kwargs)
         # Missed detection hypothesis
-        probability = Probability(1 - self.prob_detect*self.prob_gate)
-        hypotheses.append(
-            SingleProbabilityHypothesis(
-                prediction,
-                MissedDetection(timestamp=timestamp),
-                probability
-                ))
+        missed_hypothesis = SingleProbabilityHypothesis(
+            prediction,
+            MissedDetection(timestamp=timestamp),
+            Probability(1)
+            )
+        missed_hypothesis.probability = Probability(
+            1 - detector_context.prob_detection(missed_hypothesis)*self.prob_gate
+            ) if detector_context is not None else Probability(1 - self.prob_detect*self.prob_gate)
+        hypotheses.append(missed_hypothesis)
 
         predictions = [
             self.predictor.predict(track, timestamp=detection.timestamp, **kwargs)
@@ -173,24 +178,34 @@ class PDAHypothesiser(Hypothesiser):
                 valid_measurement = False
 
             if self.include_all or valid_measurement:
-                probability *= self.prob_detect
-                if self.clutter_spatial_density is not None:
-                    probability /= self.clutter_spatial_density
-
                 # True detection hypothesis
-                hypotheses.append(
-                    SingleProbabilityHypothesis(
-                        prediction,
-                        detection,
-                        probability,
-                        measurement_prediction))
+                hypothesis = SingleProbabilityHypothesis(
+                    prediction,
+                    detection,
+                    probability,
+                    measurement_prediction)
+                if detector_context is not None:
+                    hypothesis.probability *= detector_context.prob_detection(hypothesis)
+                    hypothesis.probability /= detector_context.clutter_spatial_density(detection)
+                else:
+                    hypothesis.probability *= self.prob_detect
+                hypotheses.append(hypothesis)
 
-        if self.clutter_spatial_density is None:
+        if use_validation_region:
             for hypothesis in hypotheses[1:]:  # Skip missed detection
                 hypothesis.probability *= self._validation_region_volume(
                     self.prob_gate, hypothesis.measurement_prediction) / validated_measurements
 
         return MultipleHypothesis(hypotheses, normalise=self.normalise)
+
+    def _detector_context(self, detector_context):
+        if detector_context is not None:
+            return detector_context
+        if self.clutter_spatial_density is None:
+            return None
+        return SimpleDetectorContext(
+            prob_detection=self.prob_detect,
+            clutter_spatial_density=self.clutter_spatial_density)
 
     @classmethod
     @lru_cache()

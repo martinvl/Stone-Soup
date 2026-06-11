@@ -16,6 +16,7 @@ from ..functions import cholesky_eps, sde_euler_maruyama_integration
 from ..predictor.particle import MultiModelPredictor, RaoBlackwellisedMultiModelPredictor
 from ..resampler import Resampler
 from ..regulariser import Regulariser
+from ..types.detector_context import SimpleDetectorContext
 from ..types.numeric import Probability
 from ..types.prediction import (
     Prediction, ParticleMeasurementPrediction, GaussianStatePrediction, MeasurementPrediction)
@@ -641,7 +642,7 @@ class SMCPHDUpdater(ParticleUpdater):
             "particles will continuously grow. Default is ``None``, which will output the same "
             "number of particles as the input prediction.")
 
-    def update(self, hypotheses, **kwargs):
+    def update(self, hypotheses, detector_context=None, **kwargs):
         """ SMC-PHD update step
 
         Parameters
@@ -660,7 +661,8 @@ class SMCPHDUpdater(ParticleUpdater):
         num_samples = len(prediction) if self.num_samples is None else self.num_samples
 
         # Calculate w^{n,i} Eq. (20) of [#phd2]
-        log_weights_per_hyp = self.get_log_weights_per_hypothesis(hypotheses)
+        log_weights_per_hyp = self.get_log_weights_per_hypothesis(
+            hypotheses, detector_context=detector_context)
 
         # Update weights Eq. (8) of [phd1]
         # w_k^i = \sum_{z \in Z_k}{w^{n,i}}, where i is the index of z in Z_k
@@ -690,7 +692,7 @@ class SMCPHDUpdater(ParticleUpdater):
 
         return updated_state
 
-    def get_log_weights_per_hypothesis(self, hypotheses):
+    def get_log_weights_per_hypothesis(self, hypotheses, detector_context=None):
         """Calculate the log particle weights per hypothesis
 
         Parameters
@@ -709,21 +711,35 @@ class SMCPHDUpdater(ParticleUpdater):
         prediction = hypotheses[0].prediction
         detections = [hypothesis.measurement for hypothesis in hypotheses if hypothesis]
         num_samples = prediction.state_vector.shape[1]
+        detector_context = self._detector_context(detector_context)
 
         # Compute g(z|x) matrix as in [#phd1]
         g = self._get_measurement_loglikelihoods(prediction, detections)
 
         # Calculate w^{n,i} Eq. (20) of [#phd2]
-        Ck = np.log(self.prob_detect) + g + prediction.log_weight[:, np.newaxis]
+        prob_detect = detector_context.prob_detection(hypotheses[0])
+        log_prob_detect = np.asarray(np.log(prob_detect))
+        if log_prob_detect.ndim == 1:
+            log_prob_detect = log_prob_detect[:, np.newaxis]
+
+        Ck = log_prob_detect + g + prediction.log_weight[:, np.newaxis]
         C = logsumexp(Ck, axis=0)
-        k = np.log(self.clutter_intensity)
+        k = np.log([detector_context.clutter_spatial_density(detection)
+                    for detection in detections])
         C_plus = np.logaddexp(C, k)
         log_weights_per_hyp = np.full((num_samples, len(detections) + 1), -np.inf)
-        log_weights_per_hyp[:, 0] = np.log(1 - self.prob_detect) + prediction.log_weight
+        log_weights_per_hyp[:, 0] = np.squeeze(np.log(1 - prob_detect)) + prediction.log_weight
         if len(detections):
             log_weights_per_hyp[:, 1:] = Ck - C_plus
 
         return log_weights_per_hyp
+
+    def _detector_context(self, detector_context):
+        if detector_context is not None:
+            return detector_context
+        return SimpleDetectorContext(
+            prob_detection=self.prob_detect,
+            clutter_spatial_density=self.clutter_intensity)
 
     def _get_measurement_loglikelihoods(self, prediction, detections):
         num_samples = prediction.state_vector.shape[1]

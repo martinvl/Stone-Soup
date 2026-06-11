@@ -11,6 +11,7 @@ from ...models.measurement.linear import LinearGaussian
 from ...resampler.particle import SystematicResampler
 from ...types.array import StateVectors
 from ...types.detection import Detection, MissedDetection
+from ...types.detector_context import SimpleDetectorContext
 from ...types.hypothesis import SingleHypothesis
 from ...types.multihypothesis import MultipleHypothesis
 from ...types.numeric import Probability
@@ -336,3 +337,11 @@ def test_smcphd():
     assert updated_state.timestamp == timestamp
     assert updated_state.hypothesis == multihypothesis
     assert np.isclose(float(updated_state.weight.sum()), 3, atol=1e-1)
+
+    detector_context = SimpleDetectorContext(
+        prob_detection=prob_detect,
+        clutter_spatial_density=clutter_intensity)
+    log_weights = updater.get_log_weights_per_hypothesis(
+        multihypothesis, detector_context=detector_context)
+    assert log_weights.shape == (num_particles, len(measurements) + 1)
+    assert np.isfinite(log_weights).all()

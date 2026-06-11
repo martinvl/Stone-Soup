@@ -44,9 +44,10 @@ class _BaseExpectedLikelihoodParticleFilter(Tracker):
         timestamps = {detection.timestamp for detection in detections}
         if len(timestamps) > 1:
             raise ValueError("All detections must have the same timestamp")
-        return time, detections
+        detector_context = getattr(detections, 'detector_context', None)
+        return time, detections, detector_context
 
-    def _get_new_state(self, multihypothesis):
+    def _get_new_state(self, multihypothesis, detector_context=None):
         associated_detections = set()
         missed_detection_weight = next(hyp.weight for hyp in multihypothesis if not hyp)
 
@@ -61,7 +62,7 @@ class _BaseExpectedLikelihoodParticleFilter(Tracker):
             else:
                 # Run the updater on the hypothesis
                 # NOTE: We MUST NOT resample here, as we do that after computing the new weights
-                update = self.updater.update(hypothesis)
+                update = self.updater.update(hypothesis, detector_context=detector_context)
                 particle_weights_per_hypothesis.append(
                     np.log(hypothesis.weight) + update.log_weight
                 )
@@ -140,20 +141,24 @@ class SingleTargetExpectedLikelihoodParticleFilter(_BaseExpectedLikelihoodPartic
         return {self._track} if self._track else set()
 
     def __next__(self):
-        time, detections = self._get_detections()
+        time, detections, detector_context = self._get_detections()
 
         if self._track is not None:
             # Perform data association
-            associations = self.data_associator.associate(self.tracks, detections, time)
+            associations = self.data_associator.associate(
+                self.tracks, detections, time, detector_context=detector_context)
             multihypothesis = associations[self._track]
 
             # Update the track
-            new_state, _ = self._get_new_state(multihypothesis)
+            new_state, _ = self._get_new_state(
+                multihypothesis, detector_context=detector_context)
             self._track.append(new_state)
 
         # Track initiation/deletion
-        if self._track is None or self.deleter.delete_tracks(self.tracks):
-            new_tracks = self.initiator.initiate(detections, time)
+        if self._track is None or self.deleter.delete_tracks(
+                self.tracks, detector_context=detector_context):
+            new_tracks = self.initiator.initiate(
+                detections, time, detector_context=detector_context)
             if new_tracks:
                 self._track = new_tracks.pop()
             else:
@@ -193,23 +198,27 @@ class MultiTargetExpectedLikelihoodParticleFilter(_BaseExpectedLikelihoodParticl
         return self._tracks
 
     def __next__(self):
-        time, detections = self._get_detections()
+        time, detections, detector_context = self._get_detections()
 
         # Perform data association
-        associations = self.data_associator.associate(self.tracks, detections, time)
+        associations = self.data_associator.associate(
+            self.tracks, detections, time, detector_context=detector_context)
 
         unassociated_detections = set(detections)
         for track, multihypothesis in associations.items():
 
             # Update the track
-            new_state, associated_detections = self._get_new_state(multihypothesis)
+            new_state, associated_detections = self._get_new_state(
+                multihypothesis, detector_context=detector_context)
             track.append(new_state)
 
             # Remove associated detections from the set of unassociated detections
             unassociated_detections -= associated_detections
 
         # Initiate new tracks and delete old tracks
-        self._tracks -= self.deleter.delete_tracks(self.tracks)
-        self._tracks |= self.initiator.initiate(unassociated_detections, time)
+        self._tracks -= self.deleter.delete_tracks(
+            self.tracks, detector_context=detector_context)
+        self._tracks |= self.initiator.initiate(
+            unassociated_detections, time, detector_context=detector_context)
 
         return time, self.tracks

@@ -2,6 +2,8 @@ import datetime
 
 from stonesoup.tracker.particle import SingleTargetExpectedLikelihoodParticleFilter, \
     MultiTargetExpectedLikelihoodParticleFilter
+from stonesoup.types.detection import DetectionSet
+from stonesoup.types.detector_context import SimpleDetectorContext
 
 
 def test_single_target_expected_likelihood_tracker(
@@ -49,3 +51,29 @@ def test_multi_target_expected_likelihood_tracker(
     assert max_tracks >= 3  # Should have had at least 3 tracks in single step
 
     assert len(total_tracks) >= 6  # Should have had at least 6 over all steps
+
+
+def test_expected_likelihood_tracker_detector_context(
+        particle_initiator, deleter, detector, data_particle_associator, particle_updater):
+    detector_context = SimpleDetectorContext(prob_detection=0.8)
+    context_detector = (
+        (time, DetectionSet(detections, detector_context=detector_context))
+        for time, detections in detector)
+
+    class ContextAssociator:
+        def __init__(self, associator):
+            self.associator = associator
+            self.detector_contexts = []
+
+        def associate(self, tracks, detections, timestamp, detector_context=None):
+            self.detector_contexts.append(detector_context)
+            return self.associator.associate(tracks, detections, timestamp)
+
+    context_associator = ContextAssociator(data_particle_associator)
+    tracker = MultiTargetExpectedLikelihoodParticleFilter(
+        particle_initiator, deleter, context_detector, context_associator, particle_updater)
+
+    next(iter(tracker))
+    next(tracker)
+
+    assert detector_context in context_associator.detector_contexts

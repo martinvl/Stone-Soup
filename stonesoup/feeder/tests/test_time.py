@@ -3,6 +3,8 @@ import datetime
 import pytest
 
 from ..time import TimeBufferedFeeder, TimeSyncFeeder
+from ...types.detection import DetectionSet
+from ...types.detector_context import SimpleDetectorContext
 
 
 def test_time_buffered_feeder_detections(detector):
@@ -14,6 +16,18 @@ def test_time_buffered_feeder_detections(detector):
         prev_time = time
 
     assert steps == 7
+
+
+def test_time_buffered_feeder_preserves_detector_context(detector):
+    detector_context = SimpleDetectorContext(prob_detection=0.8)
+    context_detector = [
+        (time, DetectionSet(detections, detector_context=detector_context))
+        for time, detections in detector]
+    feeder = TimeBufferedFeeder(context_detector)
+
+    time, detections = next(iter(feeder))
+
+    assert detections.detector_context is detector_context
 
 
 def test_time_buffered_feeder_groundtruth(groundtruth):
@@ -59,6 +73,18 @@ def test_time_sync_feeder_detections(detector):
         prev_time = time
 
     assert steps == 4
+
+
+def test_time_sync_feeder_preserves_detector_context(detector):
+    detector_context = SimpleDetectorContext(prob_detection=0.8)
+    context_detector = [
+        (time, DetectionSet(detections, detector_context=detector_context))
+        for time, detections in detector]
+    feeder = TimeSyncFeeder(context_detector, datetime.timedelta(seconds=2))
+
+    time, detections = next(iter(feeder))
+
+    assert detections.detector_context is detector_context
 
 
 def test_time_sync_feeder_groundtruth(groundtruth):

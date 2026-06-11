@@ -6,6 +6,8 @@ import pytest
 from ..filter import (MetadataReducer,
                       MetadataValueFilter,
                       BoundingBoxReducer)
+from ...types.detection import DetectionSet
+from ...types.detector_context import SimpleDetectorContext
 
 
 def test_metadata_reducer(detector):
@@ -31,6 +33,18 @@ def test_metadata_reducer(detector):
         assert all(time == detection.timestamp for detection in detections)
 
     assert multi_none
+
+
+def test_metadata_reducer_preserves_detector_context(detector):
+    detector_context = SimpleDetectorContext(prob_detection=0.8)
+    context_detector = [
+        (time, DetectionSet(detections, detector_context=detector_context))
+        for time, detections in detector]
+    feeder = MetadataReducer(context_detector, metadata_field="colour")
+
+    time, detections = next(iter(feeder))
+
+    assert detections.detector_context is detector_context
 
 
 def test_metadata_value_filter(detector):
@@ -67,6 +81,21 @@ def test_metadata_value_filter(detector):
             assert all([score <= 0.5 for score in scores])
         assert all(time == detection.timestamp for detection in detections)
     assert nones
+
+
+def test_metadata_value_filter_preserves_detector_context(detector):
+    detector_context = SimpleDetectorContext(prob_detection=0.8)
+    context_detector = [
+        (time, DetectionSet(detections, detector_context=detector_context))
+        for time, detections in detector]
+    feeder = MetadataValueFilter(
+        context_detector,
+        metadata_field="score",
+        operator=lambda x: x >= 0.1)
+
+    time, detections = next(iter(feeder))
+
+    assert detections.detector_context is detector_context
 
 
 @pytest.mark.parametrize('apply_measurement_model_inverse', [False, True])
@@ -109,6 +138,18 @@ def test_boundingbox_reducer_detections(detector, apply_measurement_model_invers
         assert all(time == detection.timestamp for detection in detections)
 
     assert multi_check
+
+
+def test_boundingbox_reducer_preserves_detector_context(detector):
+    detector_context = SimpleDetectorContext(prob_detection=0.8)
+    context_detector = [
+        (time, DetectionSet(detections, detector_context=detector_context))
+        for time, detections in detector]
+    feeder = BoundingBoxReducer(context_detector, np.array([[-1, 1], [-2, 2]]), [1, 0])
+
+    time, detections = next(iter(feeder))
+
+    assert detections.detector_context is detector_context
 
 
 def test_boundingbox_reducer_groundtruth(groundtruth):

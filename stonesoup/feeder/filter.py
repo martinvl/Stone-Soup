@@ -5,6 +5,14 @@ from types import FunctionType
 from .base import DetectionFeeder, GroundTruthFeeder
 from ..base import Property
 from ..buffered_generator import BufferedGenerator
+from ..types.detection import DetectionSet
+
+
+def _preserve_detector_context(states, new_states):
+    detector_context = getattr(states, 'detector_context', None)
+    if detector_context is None:
+        return set(new_states)
+    return DetectionSet(new_states, detector_context=detector_context)
 
 
 class MetadataReducer(DetectionFeeder):
@@ -38,7 +46,7 @@ class MetadataReducer(DetectionFeeder):
                     # Ignore those without meta data value
                     if meta_value is not None:
                         meta_values.add(meta_value)
-            yield time, unique_detections
+            yield time, _preserve_detector_context(detections, unique_detections)
 
 
 class MetadataValueFilter(MetadataReducer):
@@ -94,7 +102,7 @@ class MetadataValueFilter(MetadataReducer):
                 elif value is not None and self.operator(value):
                     filtered_detections.add(detection)
 
-            yield time, filtered_detections
+            yield time, _preserve_detector_context(detections, filtered_detections)
 
 
 class BoundingBoxReducer(DetectionFeeder, GroundTruthFeeder):
@@ -180,4 +188,4 @@ class BoundingBoxReducer(DetectionFeeder, GroundTruthFeeder):
                     if value < min or value > max:
                         outlier_data.add(state)
                         break
-            yield time, states - outlier_data
+            yield time, _preserve_detector_context(states, states - outlier_data)

@@ -5,6 +5,27 @@ from warnings import warn
 from ..base import Property
 from ..buffered_generator import BufferedGenerator
 from .base import DetectionFeeder, GroundTruthFeeder
+from ..types.detection import DetectionSet
+
+
+def _new_data_buffer(states):
+    detector_context = getattr(states, 'detector_context', None)
+    if detector_context is None:
+        return set(states)
+    return DetectionSet(states, detector_context=detector_context)
+
+
+def _update_data_buffer(data_buffer, states):
+    detector_context = getattr(data_buffer, 'detector_context', None)
+    new_detector_context = getattr(states, 'detector_context', None)
+    values = set(data_buffer)
+    values.update(states)
+    if detector_context is not None and (
+            new_detector_context is None or new_detector_context == detector_context):
+        return DetectionSet(values, detector_context=detector_context)
+    if detector_context is None and new_detector_context is not None:
+        return DetectionSet(values, detector_context=new_detector_context)
+    return values
 
 
 class TimeBufferedFeeder(DetectionFeeder, GroundTruthFeeder):
@@ -54,7 +75,7 @@ class TimeSyncFeeder(DetectionFeeder, GroundTruthFeeder):
     def data_gen(self):
         data_iter = iter(self.reader)
         prev_time, states = next(data_iter)
-        data_buffer = set(states)
+        data_buffer = _new_data_buffer(states)
 
         prev_time -= self.time_window
 
@@ -69,9 +90,9 @@ class TimeSyncFeeder(DetectionFeeder, GroundTruthFeeder):
                     prev_time += self.time_window
                     yield prev_time, set()
 
-                data_buffer = set(states)
+                data_buffer = _new_data_buffer(states)
             else:
-                data_buffer.update(states)
+                data_buffer = _update_data_buffer(data_buffer, states)
 
         # No more new states: yield remaining buffer
         yield prev_time + self.time_window, data_buffer
